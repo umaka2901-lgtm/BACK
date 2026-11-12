@@ -1,6 +1,6 @@
 # Judo Shop API
 
-Учебный backend маркетплейса товаров для дзюдо (REST API) со страницей каталога.
+Backend маркетплейса товаров для дзюдо (REST API) со страницей каталога.
 Оплата реализована как заглушка, реальные платежи не принимаются.
 Бренды и характеристики использованы для демонстрации.
 
@@ -45,5 +45,3 @@ curl -X POST localhost:3000/orders -H "Authorization: Bearer TOKEN" -H "Content-
 - GET/POST/PUT/DELETE /seller/products, PATCH /seller/variants/:id (seller)
 - GET /admin/products/pending, PATCH /admin/products/:id/approve (admin)
 
-## Ограничения
-Учебный проект: заказы не выполняются, оплата не принимается.
