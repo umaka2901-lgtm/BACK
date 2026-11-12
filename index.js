@@ -17,6 +17,10 @@ app.get("/health", async (req, res) => {
   }
 });
 
+const { validate, credentials, cartAdd } = require("./validate");
+app.post("/auth/register", validate(credentials));
+app.post("/auth/login", validate(credentials));
+app.post("/cart/items", validate(cartAdd));
 app.use("/auth", require("./auth"));
 app.get("/me", authenticate, (req, res) => res.json(req.user));
 app.get("/admin/ping", authenticate, requireRole("admin"), (req, res) =>
@@ -26,6 +30,8 @@ app.get("/admin/ping", authenticate, requireRole("admin"), (req, res) =>
 app.use("/", require("./catalog"));
 app.use("/cart", require("./cart"));
 app.use("/orders", require("./orders"));
+const { validate: v2, sellerProduct } = require("./validate");
+app.post("/seller/products", authenticate, requireRole("seller", "admin"), v2(sellerProduct));
 app.use("/seller", require("./seller"));
 app.use("/admin", require("./admin"));
 app.listen(3000, () => console.log("Server on http://localhost:3000"));
