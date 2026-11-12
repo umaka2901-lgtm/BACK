@@ -34,4 +34,4 @@ const { validate: v2, sellerProduct } = require("./validate");
 app.post("/seller/products", authenticate, requireRole("seller", "admin"), v2(sellerProduct));
 app.use("/seller", require("./seller"));
 app.use("/admin", require("./admin"));
-app.listen(3000, () => console.log("Server on http://localhost:3000"));
+app.listen(process.env.PORT || 3000, () => console.log("Server on http://localhost:3000"));
