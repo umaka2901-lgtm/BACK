@@ -1,47 +1,68 @@
-# Judo Shop API
+# SportMarket API
 
-Backend маркетплейса товаров для дзюдо (REST API) со страницей каталога.
-Оплата реализована как заглушка, реальные платежи не принимаются.
-Бренды и характеристики использованы для демонстрации.
+REST API спортивного маркетплейса: каталог товаров, корзина, заказы, кабинет продавца и модерация. Покупатели, продавцы и администраторы работают под разными ролями.
+
+- Сайт: https://judoshop-int.netlify.app/
+- API: https://back-dsb5.onrender.com (проверка: /health, каталог: /products)
+
+Бесплатный хостинг засыпает без запросов, первый ответ может идти до минуты.
 
 ## Стек
-Node.js, Express, PostgreSQL (Neon), JWT, zod, helmet, express-rate-limit
+
+- Node.js, Express
+- PostgreSQL (Neon)
+- JWT (access и refresh), bcryptjs
+- zod, helmet, express-rate-limit, cors
+- Фронтенд: один HTML-файл на чистом JavaScript (Netlify)
+- Фото: Cloudinary (прямая загрузка из браузера)
+- Хостинг: Render (API), Netlify (сайт)
 
 ## Возможности
-- Регистрация и вход (access 15 минут + refresh 7 дней с ротацией), роли: buyer, seller, admin
-- Каталог: поиск, фильтры (цена, категория, бренд, наличие), сортировка, пагинация
-- Размеры товара с отдельными остатками
-- Корзина и заказ в одной транзакции со списанием остатков
-- Mock-оплата, откат при сбое, отмена заказа с возвратом остатков
-- Кабинет продавца (только свои товары), модерация товаров админом
-- Валидация входных данных (zod), лимит запросов, единый формат ошибок
-- Тест на гонку: 10 одновременных заказов на последний товар, успешен один
 
-## Запуск
-1. npm install
-2. Создай файл .env:
-   DATABASE_URL=строка подключения PostgreSQL
-   JWT_SECRET=длинная случайная строка (40+ символов)
-3. node index.js (сервер на http://localhost:3000)
-4. Тест гонки: node race-test.js
+- Регистрация и вход, роли buyer, seller, admin
+- Access-токен 15 минут, refresh-токен 7 дней с ротацией (старый отзывается при обновлении)
+- Каталог: поиск, фильтры по цене, категории, бренду, наличию, сортировка, пагинация
+- Размеры товара с отдельными остатками (таблица product_variants)
+- Корзина и заказ одной транзакцией со списанием остатков
+- Mock-оплата (заглушка), откат заказа при сбое оплаты
+- Отмена заказа с возвратом остатков
+- Кабинет продавца: добавление товаров с размерами и фото, правка и скрытие только своих товаров
+- Модерация: новые товары продавцов скрыты, пока админ их не одобрит
+- Валидация входных данных (zod), лимит запросов, защитные заголовки, единый формат ошибок
 
-## Примеры
-Регистрация:
-curl -X POST localhost:3000/auth/register -H "Content-Type: application/json" -d '{"email":"a@b.com","password":"123456"}'
+## Как устроен заказ
 
-Каталог:
-curl "localhost:3000/products?q=mizuno&sort=price_asc&page=1&limit=10"
+POST /orders выполняется в одной транзакции:
 
-Корзина и заказ (нужен токен):
-curl -X POST localhost:3000/cart/items -H "Authorization: Bearer TOKEN" -H "Content-Type: application/json" -d '{"variant_id":2,"quantity":1}'
-curl -X POST localhost:3000/orders -H "Authorization: Bearer TOKEN" -H "Content-Type: application/json" -d '{}'
+1. Берёт позиции корзины, отсортированные по variant_id (одинаковый порядок блокировок защищает от взаимных блокировок).
+2. Для каждой позиции выполняет `UPDATE product_variants SET stock = stock - qty WHERE id = ? AND stock >= qty`. Если строка не обновилась, транзакция откатывается и API отвечает 409.
+3. Цена берётся из products и записывается в order_items.price_at_purchase, поэтому история заказов не меняется при смене цены.
+4. Вызывается mock-оплата. При сбое транзакция откатывается и остатки возвращаются.
+5. При успехе заказ получает статус paid, корзина очищается, выполняется COMMIT.
 
-## Эндпоинты
-- POST /auth/register, /auth/login, /auth/refresh, /auth/logout
-- GET /products, /products/:id, /categories
-- GET/POST /cart, POST /cart/items, PATCH/DELETE /cart/items/:variantId
-- POST /orders, GET /orders, GET /orders/:id, POST /orders/:id/cancel
-- PATCH /orders/:id/status (admin)
-- GET/POST/PUT/DELETE /seller/products, PATCH /seller/variants/:id (seller)
-- GET /admin/products/pending, PATCH /admin/products/:id/approve (admin)
+Дополнительная защита на уровне базы: `CHECK (stock >= 0)`.
 
+Тест на гонку (`node race-test.js`): 10 пользователей одновременно покупают последний товар. Успешным должен быть ровно один заказ, остальные получают 409.
+
+## Безопасность
+
+- Пароли хешируются bcrypt
+- В базе хранится SHA-256 хеш refresh-токена, а не сам токен
+- Все запросы к базе параметризованы, сортировка берётся из белого списка
+- Продавец изменяет только свои товары: условие seller_id входит в WHERE
+- Админа нельзя создать через API
+- Лимиты: 120 запросов в минуту на IP, 20 попыток входа за 15 минут
+- Секреты хранятся в переменных окружения, файл .env в .gitignore
+
+## Схема базы данных
+
+- users: email (уникальный), password_hash, role
+- refresh_tokens: user_id, token_hash, expires_at, revoked
+- categories, brands
+- products: seller_id, category_id, brand_id, name, description, price, image_url, is_active, is_approved
+- product_variants: product_id, size, stock (CHECK stock >= 0), уникальная пара (product_id, size)
+- cart_items: user_id, variant_id, quantity
+- orders: user_id, status, total, payment_id
+- order_items: order_id, variant_id, quantity, price_at_purchase
+
+## Запуск локально
